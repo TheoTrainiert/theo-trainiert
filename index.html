@@ -1404,14 +1404,32 @@ nav:not(.scrolled) .nav-login-btn:hover { background: var(--white); color: var(-
 /* Plan builder */
 .plan-exercise-row {
   display: grid;
-  grid-template-columns: 1fr 70px 70px 80px 100px 36px;
+  grid-template-columns: 28px 1fr 70px 70px 70px 80px 100px 36px;
   gap: 8px; align-items: center;
   padding: 12px;
   background: var(--white); border: 1px solid var(--line);
   border-radius: 10px; margin-bottom: 8px;
+  cursor: default;
 }
+.plan-exercise-row.dragging {
+  opacity: 0.4;
+  border: 2px dashed var(--blue);
+}
+.plan-exercise-row.drag-over {
+  border-color: var(--navy);
+  background: var(--blue-soft, #eef1fc);
+}
+.drag-handle {
+  cursor: grab;
+  color: var(--gray);
+  font-size: 16px;
+  text-align: center;
+  user-select: none;
+  line-height: 1;
+}
+.drag-handle:active { cursor: grabbing; }
 @media (max-width: 700px) {
-  .plan-exercise-row { grid-template-columns: 1fr 1fr 1fr; }
+  .plan-exercise-row { grid-template-columns: 28px 1fr 1fr 1fr; }
   .plan-exercise-row .hide-mobile { display: none; }
 }
 
@@ -1918,6 +1936,10 @@ nav:not(.scrolled) .nav-login-btn:hover { background: var(--white); color: var(-
     <li><a href="#rezensionen">Rezensionen</a></li>
     <li><a href="#kontakt">Kontakt</a></li>
   </ul>
+  <button onclick="navLoginClick(); document.getElementById('mobileMenu').classList.remove('open');"
+    style="margin-top:32px; background:var(--blue); color:var(--white); border:none; border-radius:999px; padding:14px 28px; font-family:inherit; font-size:15px; font-weight:500; cursor:pointer; width:100%; text-align:center;">
+    Kunden Login
+  </button>
 </div>
 
 <!-- HERO -->
@@ -3558,6 +3580,7 @@ function renderClientPlan(plan) {
                 <div class="client-ex-stats">
                   ${ex.sets  ? `<div class="client-ex-stat">Sätze: ${ex.sets}</div>` : ''}
                   ${ex.reps  ? `<div class="client-ex-stat">Wiederholungen: ${ex.reps}</div>` : ''}
+                  ${ex.weight? `<div class="client-ex-stat">⚖️ ${ex.weight} kg</div>` : ''}
                   ${ex.rest  ? `<div class="client-ex-stat gray">⏱ Pause: ${ex.rest}s</div>` : ''}
                   ${exData?.equip ? `<div class="client-ex-stat gray">${exData.equip}</div>` : ''}
                 </div>
@@ -3977,6 +4000,7 @@ function addExerciseRow(dayId, prefill) {
   const isCardio = prefill?.type === 'cardio';
 
   rowDiv.innerHTML = `
+    <div class="drag-handle" draggable="true" title="Reihenfolge ändern">⠿</div>
     <div class="ex-search-wrap">
       <input class="ex-search-input" id="${uid}_input" placeholder="🔍 Übung suchen..." autocomplete="off"
         value="${prefill?.name||''}"
@@ -3988,6 +4012,7 @@ function addExerciseRow(dayId, prefill) {
     </div>
     <input class="app-input" id="${uid}_f1" placeholder="${isCardio?'Dauer (min)':'Sets'}" value="${isCardio?(prefill?.dauer||''):(prefill?.sets||'')}">
     <input class="app-input" id="${uid}_f2" placeholder="${isCardio?'Herzfrequenz (bpm)':'Wdh.'}" type="number" min="1" value="${isCardio?(prefill?.herzfrequenz||''):(prefill?.reps||'')}">
+    <input class="app-input hide-mobile" id="${uid}_f_kg" placeholder="${isCardio?'—':'Gewicht (kg)'}" type="number" min="0" step="0.5" value="${isCardio?'':(prefill?.weight||'')}">
     <input class="app-input hide-mobile" id="${uid}_f3" placeholder="${isCardio?'Meter':'Pause (s)'}" type="number" min="0" value="${isCardio?(prefill?.meter||''):(prefill?.rest||'')}">
     <input class="app-input hide-mobile" id="${uid}_f4" placeholder="${isCardio?'Stufe':'YouTube-ID'}" value="${isCardio?(prefill?.stufe||''):(prefill?.video||'')}">
     <button class="app-btn app-btn-danger app-btn-sm" style="padding:7px" onclick="this.closest('.plan-exercise-row').remove()">✕</button>
@@ -4000,6 +4025,7 @@ function addExerciseRow(dayId, prefill) {
         rows="2" style="font-size:12px;resize:vertical;display:${hasNote?'block':'none'};flex:1">${prefill?.notes||''}</textarea>
     </div>`;
   rowsEl.appendChild(rowDiv);
+  initDragHandle(rowDiv, rowsEl);
   renderExSearchOptions(uid, '');
 }
 
@@ -4008,17 +4034,20 @@ function updateExRowFields(uid, isCardio) {
   if (typeField) typeField.value = isCardio ? 'cardio' : 'regular';
   const f1 = document.getElementById(uid + '_f1');
   const f2 = document.getElementById(uid + '_f2');
+  const fkg = document.getElementById(uid + '_f_kg');
   const f3 = document.getElementById(uid + '_f3');
   const f4 = document.getElementById(uid + '_f4');
   if (!f1) return;
   if (isCardio) {
     f1.placeholder = 'Dauer (min)'; f1.value = '';
     f2.placeholder = 'Herzfrequenz (bpm)'; f2.value = '';
+    if (fkg) { fkg.placeholder = '—'; fkg.value = ''; }
     f3.placeholder = 'Meter'; f3.value = '';
     f4.placeholder = 'Stufe'; f4.value = '';
   } else {
     f1.placeholder = 'Sets'; f1.value = '';
     f2.placeholder = 'Wdh.'; f2.value = '';
+    if (fkg) { fkg.placeholder = 'Gewicht (kg)'; fkg.value = ''; }
     f3.placeholder = 'Pause (s)'; f3.value = '';
     f4.placeholder = 'YouTube-ID'; f4.value = '';
   }
@@ -4035,6 +4064,37 @@ function toggleExNote(btn) {
     textarea.style.display = 'none';
     btn.textContent = '✏️ + Notiz';
   }
+}
+
+function initDragHandle(rowDiv, rowsEl) {
+  const handle = rowDiv.querySelector('.drag-handle');
+  if (!handle) return;
+
+  handle.addEventListener('dragstart', e => {
+    rowDiv.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  handle.addEventListener('dragend', () => {
+    rowDiv.classList.remove('dragging');
+    rowsEl.querySelectorAll('.plan-exercise-row').forEach(r => r.classList.remove('drag-over'));
+  });
+  rowDiv.addEventListener('dragover', e => {
+    e.preventDefault();
+    const dragging = rowsEl.querySelector('.dragging');
+    if (!dragging || dragging === rowDiv) return;
+    rowsEl.querySelectorAll('.plan-exercise-row').forEach(r => r.classList.remove('drag-over'));
+    rowDiv.classList.add('drag-over');
+    const rows = [...rowsEl.querySelectorAll('.plan-exercise-row')];
+    const dragIdx = rows.indexOf(dragging);
+    const targetIdx = rows.indexOf(rowDiv);
+    if (dragIdx < targetIdx) rowsEl.insertBefore(dragging, rowDiv.nextSibling);
+    else rowsEl.insertBefore(dragging, rowDiv);
+  });
+  rowDiv.addEventListener('dragleave', () => rowDiv.classList.remove('drag-over'));
+  rowDiv.addEventListener('drop', e => {
+    e.preventDefault();
+    rowDiv.classList.remove('drag-over');
+  });
 }
 
 function openExSearch(uid) {
@@ -4110,6 +4170,7 @@ async function savePlan() {
       const typeField  = row.querySelector('input[type="hidden"][id$="_type"]');
       const f1 = row.querySelector('input[id$="_f1"]');
       const f2 = row.querySelector('input[id$="_f2"]');
+      const fkg = row.querySelector('input[id$="_f_kg"]');
       const f3 = row.querySelector('input[id$="_f3"]');
       const f4 = row.querySelector('input[id$="_f4"]');
       const notesField = row.querySelector('textarea');
@@ -4123,6 +4184,7 @@ async function savePlan() {
       } : {
         name, type:'regular', notes: notesField?.value?.trim()||'',
         sets: f1?.value||'', reps: f2?.value||'',
+        weight: fkg?.value||'',
         rest: f3?.value||'', video: f4?.value||''
       };
     }).filter(Boolean);
@@ -4996,6 +5058,7 @@ async function loadCpTrainingPlan(planId) {
                   ` : `
                     ${ex.sets?`<div class="client-ex-stat">Sätze: ${ex.sets}</div>`:''}
                     ${ex.reps?`<div class="client-ex-stat">Wiederholungen: ${ex.reps}</div>`:''}
+                    ${ex.weight?`<div class="client-ex-stat">⚖️ ${ex.weight} kg</div>`:''}
                     ${ex.rest?`<div class="client-ex-stat gray">⏱ Pause: ${ex.rest}s</div>`:''}
                   `}
                 </div>
